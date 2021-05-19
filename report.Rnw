@@ -1,0 +1,204 @@
+\documentclass{article}
+
+\usepackage{subcaption}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\author{Jelena Kaleb}
+\title{Report on: A randomized control trial evaluating the effects of
+police body-worn cameras}
+\maketitle
+
+<<echo = FALSE>>=
+library(tidyverse)
+library(coefplot)
+library(estimatr)
+library(stargazer)
+library(knitr)
+library(xtable)
+@
+
+\pagebreak
+
+\section{Introduction}
+
+Body-worn cameras (= BWcs) are expected to deter officers from engaging in unprofessional behavior, especially unjustified use of force, and decrease the likelihood of inappropriate or combative behavior in civilians. They are also expected to have evidentiary value, both for internal affairs and criminal investigations. However, the results of the paper "A randomized control trial evaluating the effects of body-worn cameras" by David Yokum, Anita Ravishankar, and Alexander Coppockshow, show that BWCs have very small and statistically insignificant effects on police use of force and civilian complaints, as well as other policing activities and judicial outcomes.
+
+The aim of this report is to present and discuss the main statistical methods used in said paper. I have not just used the final study, published in PNAS, but also the corresponding working paper, preanalysis plan, and all other supplementary material available. As there are a lot of aspects to such a large study, I have chosen to examine the paper from its two most important perspectives, namely with regards to use of force and civilian complaints.
+
+\pagebreak
+
+\section{Data}
+
+The authors collaborated with the Metropolitan Police Department of the District of Columbia (MPD) and randomly assigned officers to receive cameras or not, subsequently tracking their behavior for a minimum of 7 months using administrative data. They have published a clean version of their datasets, which I will be using for all my analyses. The raw data was not published due to privacy concerns of both police officers and civilians. Furthermore, only a subset of all available data was used in the primary analysis of the article, meaning that special units of the MPD were left out. It would have been interesting to know why the authors felt this to be necessary, after making the effort to collect data for these special units. Since I am, however, attempting to replicate their results as accurately as possible, I will omit the observations concerned as well.
+
+<<echo = FALSE, include = FALSE>>=
+# Loading Datasets
+daylevel <- read_csv("data/day_level_anon.csv")
+officerlevel <- read_csv("data/officer_level_anon.csv") %>%
+  filter(district == "1D" | district == "2D" | district == "3D" | district == "4D" | district == "5D" | district == "6D" | district == "7D")
+@
+
+\begin{figure}[h]
+
+<<fig = TRUE, echo = FALSE>>=
+# Descriptive Analysis
+## Cameras Assigned
+ggplot(officerlevel, aes(x = as.factor(Z))) +
+  geom_histogram(stat = "count") +
+  xlab("officers without BWCs vs. officers with BWCs")
+@
+
+\caption{}
+\end{figure}
+
+<<echo = FALSE, include = FALSE>>=
+#nrow(filter(officerlevel, Z == 1))
+#nrow(filter(officerlevel, Z == 0))
+@
+
+After removing all the observations concerning special units from our dataset, there are 1034 officer who have been assigned a BWC, and 888 officers who haven't, left. This fits with the 1922 observations in total counted by the authors.
+
+With regards to the dependent variables of interest, police use of force and civilian complaints, I have visualised their daily occurence during the trial period, as well as their distribution per officer before and after the treatment (= assigning and using BWCs).
+
+\begin{center}
+\begin{figure}[h]
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+## Police Use of Force
+ggplot(daylevel, aes(x = as.factor(use_of_force_mpd))) +
+  geom_histogram(stat = "count") +
+  xlab("Days with no occurence vs. days with at least one occurence")
+@
+
+\end{minipage}%
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+ggplot(officerlevel, aes(x = use_of_force_pre)) +
+  geom_histogram() +
+  xlab("Use of force per officer before treatment")
+@
+
+\end{minipage}%
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+ggplot(officerlevel, aes(x = use_of_force_post)) +
+  geom_histogram() +
+  xlab("Use of force per officer after treatment")
+@
+
+\end{minipage}
+\caption{Use of Force}
+\end{figure}
+\end{center}
+
+\begin{center}
+\begin{figure}[h]
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+## Civilian Complaints
+ggplot(daylevel, aes(x = as.factor(all_complaints))) +
+  geom_histogram(stat = "count") +
+  xlab("Days with no occurence vs. days with at least one occurence")
+@
+
+\end{minipage}%
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+ggplot(officerlevel, aes(x = all_complaints_pre)) +
+  geom_histogram() +
+  xlab("Complaints per officer before treatment")
+@
+
+\end{minipage}%
+\begin{minipage}[b]{.33\linewidth}
+
+<<fig = TRUE, echo = FALSE>>=
+ggplot(officerlevel, aes(x = all_complaints_post)) +
+  geom_histogram() +
+  xlab("Complaints per officer after treatment")
+@
+
+\end{minipage}
+\caption{Civilian Complaints}
+\end{figure}
+\end{center}
+
+Just visually comparing the last two plots of each variable suggests that the treatment might not have a big effect.
+
+\pagebreak 
+
+\section{Statistical Models}
+
+In order to measure the effect of the treatment accurately, the authors mainly used Weighted Least Squares Regression. WLS is a generalisation of ordinary least squares and linear regression in which knowledge of the variance of the observations is incorporated into the regression. This is useful when there is reason to suspect heteroscedasticity or when one wants to purposefully give certain observations a bigger or smaller weight. In this case, they used inverse probability weights because of the different likelihood of being assigned a camera in each district.
+
+The formula of their regression is $Y_{post} = \beta_0 + \beta_1Z + \beta_2Y_{pre} + \beta_3Block + \beta_4X + \epsilon$, where $Z$ is the treatment indicator, $Y_{pre}$ is the pretreatment value of the outcome under study, $Block$  indicates the officer's home district, and $X$ includes pretreatment covariates, such as race, gender, and length of service. Here, I partially recreated Table 1 from the working paper (p. 15):
+
+\begin{center}
+
+<<echo = FALSE, results = tex>>=
+#See: regression_tables.R, as uploaded by the authors
+lm1 <- lm(use_of_force_1000_rate_post ~ Z, weights = weights, data = officerlevel)
+lm2 <- lm(all_complaints_1000_rate_post ~ Z, weights = weights, data = officerlevel)
+
+intercept <- c(coef(lm1)[1], coef(lm2)[1])
+beta <- c(coef(lm1)[2], coef(lm2)[2])
+se_intercept <- c(starprep(lm1)[[1]][1], starprep(lm2)[[1]][1])
+se_beta <- c(starprep(lm1)[[1]][2], starprep(lm2)[[1]][2])
+n <- rep(1922, 2)
+r2 <- c(summary(lm1)$r.squared, summary(lm2)$r.squared)
+
+t1 <- rbind(beta, se_beta, intercept, se_intercept, n, r2)
+rownames(t1) <- c("beta", "RSE(1)", "Intercept", "RSE(2)", "N", "R2")
+colnames(t1) <- c("Use of Force", "Citizen Complaints")
+
+print(xtable(t1, digits = 1))
+print("Outcomes are yearly event rates per 1000 officers")
+@
+
+\end{center}
+
+The results match the first two columns of the table almost exactly. I have repeated this step with the full data:
+
+\begin{center}
+
+<<echo = FALSE, results = tex>>=
+fulldata <- read_csv("data/officer_level_anon.csv")
+
+lm1 <- lm(use_of_force_1000_rate_post ~ Z, weights = weights, data = fulldata)
+lm2 <- lm(all_complaints_1000_rate_post ~ Z, weights = weights, data = fulldata)
+
+intercept <- c(coef(lm1)[1], coef(lm2)[1])
+beta <- c(coef(lm1)[2], coef(lm2)[2])
+se_intercept <- c(starprep(lm1)[[1]][1], starprep(lm2)[[1]][1])
+se_beta <- c(starprep(lm1)[[1]][2], starprep(lm2)[[1]][2])
+n <- rep(1922, 2)
+r2 <- c(summary(lm1)$r.squared, summary(lm2)$r.squared)
+
+t1 <- rbind(beta, se_beta, intercept, se_intercept, n, r2)
+rownames(t1) <- c("beta", "RSE(1)", "Intercept", "RSE(2)", "N", "R2")
+colnames(t1) <- c("Use of Force", "Citizen Complaints")
+
+print(xtable(t1, digits = 1))
+print("Outcomes are yearly event rates per 1000 officers")
+@
+
+\end{center}
+
+As we can see, using the full data does not make much of a difference, we still can't reject the null hypothesis.
+
+It is important to note, that a count model is be better suited for these kinds of variabes, as they aren't truly continuous. There are no 3.5 occurences of violence or half a civilian complaint. Though they did include count models in the supplementary material, they did not include it in their main analysis. In this case, the results are not affected by this, however. 
+
+\pagebreak
+
+\section{Conclusion}
+
+All in all, it can be said, that this is an almost exemplary paper, especially with regards to the degree of transparency that was provided. The authors made an effort to explain their way of working as well as possible and included many supplementary analyses both to support and question their own results. Although count models should perhaps have been more of a focus in the paper than WLS, they were still included and largely show the same effects.
+
+\end{document}
